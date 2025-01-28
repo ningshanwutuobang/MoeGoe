@@ -145,4 +145,5 @@ if __name__ == '__main__':
     x = stn_tst.data.cpu().float().numpy()
     y = np.sum(attn, axis=0)
 
+    print(_clean_text(text, hps_ms.data.text_cleaners))
     print(np.stack([x, y], axis=0))

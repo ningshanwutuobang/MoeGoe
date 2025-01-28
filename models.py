@@ -8,7 +8,7 @@ import modules
 import attentions
 
 from torch.nn import Conv1d, ConvTranspose1d
-from torch.nn.utils.parametrizations import weight_norm
+from torch.nn.utils import weight_norm
 from commons import init_weights
 
 
@@ -246,6 +246,15 @@ class PosteriorEncoder(nn.Module):
     z = (m + torch.randn_like(m) * torch.exp(logs)) * x_mask
     return z, m, logs, x_mask
 
+  def forward_no_rand(self, x, x_lengths, g=None):
+    x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
+    x = self.pre(x) * x_mask
+    x = self.enc(x, x_mask, g=g)
+    stats = self.proj(x) * x_mask
+    m, logs = torch.split(stats, self.out_channels, dim=1)
+    z = (m + torch.zeros_like(m) * torch.exp(logs)) * x_mask
+    return z, m, logs, x_mask
+
 
 class Generator(torch.nn.Module):
     def __init__(self, initial_channel, resblock, resblock_kernel_sizes, resblock_dilation_sizes, upsample_rates, upsample_initial_channel, upsample_kernel_sizes, gin_channels=0):
@@ -408,7 +417,7 @@ class SynthesizerTrn(nn.Module):
       g = self.emb_g(sid).unsqueeze(-1) # [b, h, 1]
     else:
       g = None
-    z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=g)
+    z, m_q, logs_q, y_mask = self.enc_q.forward_no_rand(y, y_lengths, g=g)
     z_p = self.flow(z, y_mask, g=g)
 
     from monotonic_align import maximum_path
