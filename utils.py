@@ -38,7 +38,7 @@ class HParams():
 
 
 def load_checkpoint(checkpoint_path, model):
-  checkpoint_dict = load(checkpoint_path, map_location='cpu')
+  checkpoint_dict = load(checkpoint_path, map_location='cpu', weights_only=True)
   iteration = checkpoint_dict['iteration']
   saved_state_dict = checkpoint_dict['model']
   if hasattr(model, 'module'):

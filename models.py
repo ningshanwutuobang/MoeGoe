@@ -8,7 +8,7 @@ import modules
 import attentions
 
 from torch.nn import Conv1d, ConvTranspose1d
-from torch.nn.utils import weight_norm
+from torch.nn.utils.parametrizations import weight_norm
 from commons import init_weights
 
 
@@ -401,4 +401,29 @@ class SynthesizerTrn(nn.Module):
     z_hat = self.flow(z_p, y_mask, g=g_tgt, reverse=True)
     o_hat = self.dec(z_hat * y_mask, g=g_tgt)
     return o_hat, y_mask, (z, z_p, z_hat)
+
+  def text_aligned(self, x, x_lengths, y, y_lengths, sid=None, emotion_embedding=None):
+    x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, emotion_embedding)
+    if self.n_speakers > 0:
+      g = self.emb_g(sid).unsqueeze(-1) # [b, h, 1]
+    else:
+      g = None
+    z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=g)
+    z_p = self.flow(z, y_mask, g=g)
+
+    from monotonic_align import maximum_path
+
+    with torch.no_grad():
+      # negative cross-entropy
+      s_p_sq_r = torch.exp(-2 * logs_p) # [b, d, t]
+      neg_cent1 = torch.sum(-0.5 * math.log(2 * math.pi) - logs_p, [1], keepdim=True) # [b, 1, t_s]
+      neg_cent2 = torch.matmul(-0.5 * (z_p ** 2).transpose(1, 2), s_p_sq_r) # [b, t_t, d] x [b, d, t_s] = [b, t_t, t_s]
+      neg_cent3 = torch.matmul(z_p.transpose(1, 2), (m_p * s_p_sq_r)) # [b, t_t, d] x [b, d, t_s] = [b, t_t, t_s]
+      neg_cent4 = torch.sum(-0.5 * (m_p ** 2) * s_p_sq_r, [1], keepdim=True) # [b, 1, t_s]
+      neg_cent = neg_cent1 + neg_cent2 + neg_cent3 + neg_cent4
+
+      attn_mask = torch.unsqueeze(x_mask, 2) * torch.unsqueeze(y_mask, -1)
+      attn = maximum_path(neg_cent, attn_mask.squeeze(1)).unsqueeze(1).detach()
+
+    return attn
 
